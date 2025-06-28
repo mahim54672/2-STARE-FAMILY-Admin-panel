@@ -1,0 +1,276 @@
+<!DOCTYPE html><html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Admin Panel - 2 STAR FAMILY</title>
+  <link href="https://fonts.googleapis.com/css2?family=Roboto&display=swap" rel="stylesheet">
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <style>
+    body {
+      font-family: 'Roboto', sans-serif;
+      background: #121212;
+      margin: 0;
+      padding: 20px;
+      color: #ffffff;
+    }
+    .container {
+      max-width: 1200px;
+      margin: auto;
+      background: #1e1e2f;
+      padding: 20px;
+      box-shadow: 0 0 10px rgba(0,0,0,0.5);
+      border-radius: 8px;
+    }
+    h2 {
+      text-align: center;
+      margin-bottom: 20px;
+    }
+    input, button, textarea {
+      padding: 10px;
+      margin: 5px 0;
+      font-size: 16px;
+      border: none;
+      border-radius: 4px;
+    }
+    input, textarea {
+      width: 100%;
+      background: #333;
+      color: #fff;
+      border: 1px solid #555;
+    }
+    button {
+      background: #00f7ff;
+      color: #000;
+      cursor: pointer;
+    }
+    button:hover {
+      background: #00c0cc;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 20px;
+      background-color: #2a2a3a;
+    }
+    th, td {
+      padding: 10px;
+      border: 1px solid #444;
+      text-align: center;
+      font-size: 14px;
+    }
+    th {
+      background-color: #00b9c1;
+    }
+    .actions button {
+      margin: 2px;
+      padding: 5px 10px;
+      font-size: 13px;
+    }
+    .modal {
+      display: none;
+      position: fixed;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      background: rgba(0, 0, 0, 0.7);
+      justify-content: center;
+      align-items: center;
+      z-index: 9999;
+    }
+    .modal-content {
+      background: #2e2e3e;
+      padding: 20px;
+      border-radius: 10px;
+      width: 90%;
+      max-width: 500px;
+    }
+  </style>
+</head>
+<body>
+<div class="container">
+  <h2>2 STAR FAMILY - Admin Panel</h2>
+  <input type="text" id="searchId" placeholder="Enter Student ID to search">
+  <button onclick="searchData()">Search</button>
+  <div id="result"></div>
+  <div style="margin-top:20px;">
+    <button onclick="downloadExcel()">Download Excel</button>
+    <button onclick="downloadPDF()">Download PDF</button>
+  </div>
+  <table>
+    <thead>
+      <tr>
+        <th>Student ID</th>
+        <th>Full Name</th>
+        <th>Email</th>
+        <th>Phone</th>
+        <th>Contact</th>
+        <th>Referrer</th>
+        <th>Batch</th>
+        <th>Rank</th>
+        <th>NID</th>
+        <th>Birth</th>
+        <th>Edit</th>
+        <th>Delete</th>
+      </tr>
+    </thead>
+    <tbody id="dataBody"></tbody>
+  </table>
+</div><div class="modal" id="editModal">
+  <div class="modal-content">
+    <h3>Edit Member</h3>
+    <input type="text" id="editFullName" placeholder="Full Name">
+    <input type="text" id="editEmail" placeholder="Email">
+    <input type="text" id="editPhone" placeholder="Phone">
+    <input type="text" id="editContactPerson" placeholder="Contact Person">
+    <input type="text" id="editReferrerId" placeholder="Referrer ID">
+    <input type="text" id="editBatchNumber" placeholder="Batch Number">
+    <input type="text" id="editNidUrl" placeholder="NID URL">
+    <input type="text" id="editBirthUrl" placeholder="Birth Certificate URL">
+    <button onclick="saveEdit()">Save</button>
+    <button onclick="closeModal()">Cancel</button>
+  </div>
+</div><script>
+const firebaseConfig = {
+  apiKey: "AIzaSyDkqrtYGZTTb80JuoEUimqk-D9olur11hs",
+  authDomain: "star-family-b2201.firebaseapp.com",
+  databaseURL: "https://star-family-b2201-default-rtdb.firebaseio.com",
+  projectId: "star-family-b2201",
+  appId: "1:1052096614963:android:7288da8bc7c8717ee74946"
+};
+firebase.initializeApp(firebaseConfig);
+const db = firebase.database();
+let currentEditId = "";
+
+function getReferralCount(refId) {
+  return db.ref("team_members").orderByChild("referrerId").equalTo(refId).once('value').then(s => {
+    return s.exists() ? Object.keys(s.val()).length : 0;
+  });
+}
+
+function renderRow(data) {
+  getReferralCount(data.studentId).then(count => {
+    const rank = count >= 2 ? '1 Core' : `${count} Ref`;
+    const row = document.createElement('tr');
+    row.innerHTML = `
+      <td>${data.studentId}</td>
+      <td>${data.fullName}</td>
+      <td>${data.email}</td>
+      <td>${data.phone}</td>
+      <td>${data.contactPerson}</td>
+      <td>${data.referrerId}</td>
+      <td>${data.batchNumber}</td>
+      <td>${rank}</td>
+      <td>${data.nidUrl ? `<button onclick=\"window.open('${data.nidUrl}', '_blank')\">View</button>` : 'N/A'}</td>
+      <td>${data.birthUrl ? `<button onclick=\"window.open('${data.birthUrl}', '_blank')\">View</button>` : 'N/A'}</td>
+      <td><button onclick="editData('${data.studentId}')">Edit</button></td>
+      <td><button onclick="deleteData('${data.studentId}')">Delete</button></td>
+    `;
+    document.getElementById("dataBody").appendChild(row);
+  });
+}
+
+function loadAllData() {
+  document.getElementById("dataBody").innerHTML = '';
+  db.ref("team_members").once('value').then(snapshot => {
+    snapshot.forEach(child => renderRow(child.val()));
+  });
+}
+
+function searchData() {
+  const id = document.getElementById("searchId").value;
+  db.ref("team_members/" + id).once('value').then(snap => {
+    if (!snap.exists()) return alert("Student not found");
+    const d = snap.val();
+    getReferralCount(id).then(count => {
+      const rank = count >= 2 ? '1 Core' : `${count} Ref`;
+      document.getElementById("result").innerHTML = `
+        <h3>Search Result</h3>
+        <div style="background:#222;padding:15px;border-radius:8px;">
+          <p><b>Name:</b> ${d.fullName}</p>
+          <p><b>Email:</b> ${d.email}</p>
+          <p><b>Phone:</b> ${d.phone}</p>
+          <p><b>Contact Person:</b> ${d.contactPerson}</p>
+          <p><b>Student ID:</b> ${d.studentId}</p>
+          <p><b>Referrer ID:</b> ${d.referrerId}</p>
+          <p><b>Batch Number:</b> ${d.batchNumber}</p>
+          <p><b>Rank:</b> ${rank}</p>
+          <p><b>NID:</b> ${d.nidUrl ? `<button onclick=\"window.open('${d.nidUrl}', '_blank')\">View NID</button>` : 'N/A'}<br>
+             <b>Birth:</b> ${d.birthUrl ? `<button onclick=\"window.open('${d.birthUrl}', '_blank')\">View Birth</button>` : 'N/A'}</p>
+        </div>
+      `;
+    });
+  });
+}
+
+function editData(id) {
+  currentEditId = id;
+  db.ref("team_members/" + id).once('value').then(snap => {
+    const d = snap.val();
+    document.getElementById("editFullName").value = d.fullName || '';
+    document.getElementById("editEmail").value = d.email || '';
+    document.getElementById("editPhone").value = d.phone || '';
+    document.getElementById("editContactPerson").value = d.contactPerson || '';
+    document.getElementById("editReferrerId").value = d.referrerId || '';
+    document.getElementById("editBatchNumber").value = d.batchNumber || '';
+    document.getElementById("editNidUrl").value = d.nidUrl || '';
+    document.getElementById("editBirthUrl").value = d.birthUrl || '';
+    document.getElementById("editModal").style.display = "flex";
+  });
+}
+
+function saveEdit() {
+  const updates = {
+    fullName: document.getElementById("editFullName").value,
+    email: document.getElementById("editEmail").value,
+    phone: document.getElementById("editPhone").value,
+    contactPerson: document.getElementById("editContactPerson").value,
+    referrerId: document.getElementById("editReferrerId").value,
+    batchNumber: document.getElementById("editBatchNumber").value,
+    nidUrl: document.getElementById("editNidUrl").value,
+    birthUrl: document.getElementById("editBirthUrl").value
+  };
+  db.ref("team_members/" + currentEditId).update(updates).then(() => {
+    closeModal();
+    loadAllData();
+  });
+}
+
+function closeModal() {
+  document.getElementById("editModal").style.display = "none";
+}
+
+function deleteData(id) {
+  if (!confirm("Are you sure to delete?")) return;
+  db.ref("team_members/" + id).remove().then(() => loadAllData());
+}
+
+function downloadExcel() {
+  db.ref("team_members").once('value').then(snap => {
+    const rows = [];
+    snap.forEach(child => rows.push(child.val()));
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Members");
+    XLSX.writeFile(wb, "team_members.xlsx");
+  });
+}
+
+function downloadPDF() {
+  const { jsPDF } = window.jspdf;
+  db.ref("team_members").once('value').then(snap => {
+    const doc = new jsPDF();
+    let y = 10;
+    snap.forEach(child => {
+      const d = child.val();
+      doc.text(`${d.studentId} | ${d.fullName} | ${d.email} | ${d.phone} | ${d.contactPerson} | ${d.referrerId} | ${d.batchNumber}`, 10, y);
+      y += 10;
+    });
+    doc.save("team_members.pdf");
+  });
+}
+
+loadAllData();
+</script></body>
+</html>
